@@ -1,0 +1,106 @@
+name: Aggiorna archivio AIFA
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # Ogni lunedì alle 03:17 UTC
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: aseryn-aifa-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Genera e pubblica archivio AIFA
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # ---------------------------------------------------------
+      # 1. Recupera il repository
+      # ---------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # 2. Configura Python
+      # ---------------------------------------------------------
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ---------------------------------------------------------
+      # 3. Pulisce eventuali dati generati precedentemente
+      # ---------------------------------------------------------
+      - name: Pulisci archivio precedente
+        shell: bash
+        run: |
+          rm -rf public
+          mkdir -p public/shards
+
+      # ---------------------------------------------------------
+      # 4. Scarica AIFA e genera gli shard JSON
+      # ---------------------------------------------------------
+      - name: Genera archivio AIFA
+        run: python scripts/build_aifa.py
+
+      # ---------------------------------------------------------
+      # 5. Controlli minimi sull'output
+      # ---------------------------------------------------------
+      - name: Verifica archivio generato
+        shell: bash
+        run: |
+          if [ ! -f "public/index.json" ]; then
+            echo "ERRORE: public/index.json non è stato generato."
+            exit 1
+          fi
+
+          if [ ! -d "public/shards" ]; then
+            echo "ERRORE: la cartella public/shards non esiste."
+            exit 1
+          fi
+
+          SHARD_COUNT=$(find public/shards -type f -name "*.json" | wc -l)
+
+          echo "Shard generati: $SHARD_COUNT"
+
+          if [ "$SHARD_COUNT" -lt 10 ]; then
+            echo "ERRORE: numero di shard anomalo."
+            exit 1
+          fi
+
+          echo ""
+          echo "Contenuto index.json:"
+          cat public/index.json
+
+      # ---------------------------------------------------------
+      # 6. Configura GitHub Pages
+      # ---------------------------------------------------------
+      - name: Configura GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # ---------------------------------------------------------
+      # 7. Prepara l'artifact da pubblicare
+      # ---------------------------------------------------------
+      - name: Carica artifact Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      # ---------------------------------------------------------
+      # 8. Pubblica il nuovo catalogo
+      # ---------------------------------------------------------
+      - name: Pubblica GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
