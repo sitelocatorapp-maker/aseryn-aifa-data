@@ -161,6 +161,15 @@ def infer_package_info(description, pharmaceutical_form):
 
     return None, infer_unit_from_form(pharmaceutical_form)
 
+def infer_strength(description):
+    # Only explicit mass per unit or concentration; never infer from pack count.
+    if not description:
+        return None
+    pattern = r"(?<![\w.,])\d+(?:[.,]\d+)?\s*(?:microgrammi?|mcg|[µμ]g|milligrammi?|mg|grammi?|g|U\.?I\.?|unità internazionali)(?![a-zA-Z])(?:\s*/\s*(?:\d+(?:[.,]\d+)?\s*)?(?:ml|mL|g|dose|ora)\b)?"
+    matches = list(dict.fromkeys(m.group(0).strip() for m in re.finditer(pattern, description, re.IGNORECASE)))
+    # Ambiguous descriptions require source review, not a guessed dose.
+    return matches[0] if len(matches) == 1 else None
+
 def main():
     PUBLIC.mkdir(exist_ok=True)
     SHARDS.mkdir(parents=True, exist_ok=True)
@@ -239,7 +248,7 @@ def main():
                 or first(row, "PA_ASSOCIATI"),
             "strength":
                 " + ".join(strengths)
-                or None,
+                or infer_strength(description),
             "pharmaceutical_form":
                 pharmaceutical_form,
             "package_description":
